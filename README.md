@@ -1,50 +1,58 @@
-goldmark-meta
-=========================
-[![GoDev][godev-image]][godev-url]
+---
+Problem: In some parsers this will be rendered.
+Solution: mmd
+---
 
-[godev-image]: https://pkg.go.dev/badge/github.com/yuin/goldmark-meta
-[godev-url]: https://pkg.go.dev/github.com/yuin/goldmark-meta
+mmd
+===
+
+*Fork of the [goldmark-meta](http://github.com/yuin/goldmark-meta) extension for [goldmark](http://github.com/yuin/goldmark), both by [yuin](http://github.com/yuin).*
+
+This extension provides parsing of metadata in markdown using a different syntax than most to avoid the metadata being improperly parsed by any markdown renderer that doesn't parse for metadata.
+
+Motivation
+----------
+
+Most extensions for markdown that provide parsing for document metadata use YAML with its [Document Markers](https://yaml.org/spec/1.2.2/#912-document-markers) syntax.
+This is the idiomatic way of parsing metadata for in a markdown document, since [jekyll](https://jekyllrb.com/docs/front-matter/) started using it.
+
+[Hugo](gohugo.io) (a tool similair to jekyll) later decided it would allow for multiple data formats, which required different document markers for those languages.
+For JSON the marker was simply the opening `{` and for TOML it was `+++`.
+
+The are great solutions but all of them also render in any markdown parser (e.g. GitHub) that doesn't expect markdown, causing an awkward section at the top of the render...
+
+> ![rendered-meta](rendered-meta.png)
+
+To deal with this, the original *goldmark-meta* extension added a bunch of code that gave the option to render metdata as a HTML table but my argument is that metadata shouldn't be rendered at all.
+
+This extension uses a different syntax to avoid that issue by putting the metadata in a HTML comment, that way it doesn't get rendered regardless of the markdown parser - which is how metadata should be treated.
 
 
-goldmark-meta is an extension for the [goldmark](http://github.com/yuin/goldmark) 
-that allows you to define document metadata in YAML format.
+Syntax
+------
+
+Metadata must start of the start of the document using an **opening HTML comment tag** (`<!--`), followed by a **signal character** that signals the metadata format being used.
+
+Metadata must end with the same **signal character** followed by  **closing HTML comment tag** (`-->`).
+
+Everything inbetween these two tags should be the metadata in the signalled syntax. For examples, see below.
+
+Here are the **signal characters** and examples of how the metablock at the start of the document should look (where `...` is the metadata text):
+
+- YAML = `:`&emsp;(`<!--: ... :-->`)
+- TOML = `#`&emsp;(`<!--# ... #-->`)
+- JSON = `{}`&emsp;(`<!--{ ... }-->`)
+
 
 Usage
---------------------
+-----
+
+This is an extension to [goldmark](http://github.com/yuin/goldmark), so it'll need to be used in conjuction with it.
 
 ### Installation
 
 ```
-go get github.com/yuin/goldmark-meta
-```
-
-### Markdown syntax
-
-YAML metadata block is a leaf block that can not have any markdown element
-as a child.
-
-YAML metadata must start with a **YAML metadata separator**.
-This separator must be at first line of the document.
-
-A **YAML metadata separator** is a line that only `-` is repeated.
-
-YAML metadata must end with a **YAML metadata separator**.
-
-You can define objects as a 1st level item. At deeper level, you can define 
-any kind of YAML element.
-
-Example:
-
-```
----
-Title: goldmark-meta
-Summary: Add YAML metadata to the document
-Tags:
-    - markdown
-    - goldmark
----
-
-# Heading 1
+go get github.com/gearsix/mmd
 ```
 
 
@@ -57,24 +65,24 @@ import (
     "github.com/yuin/goldmark"
     "github.com/yuin/goldmark/extension"
     "github.com/yuin/goldmark/parser"
-    "github.com/yuin/goldmark-meta"
+    "github.com/gearsix/mmd"
 )
 
 func main() {
     markdown := goldmark.New(
         goldmark.WithExtensions(
-            meta.Meta,
+            mmd.Meta,
         ),
     )
-    source := `---
-Title: goldmark-meta
+    source := `<!--:
+Title: Markdown Meta
 Summary: Add YAML metadata to the document
 Tags:
     - markdown
     - goldmark
----
+-->
 
-# Hello goldmark-meta
+This is an example of markdown meta using YAML.
 `
 
     var buf bytes.Buffer
@@ -82,7 +90,7 @@ Tags:
     if err := markdown.Convert([]byte(source), &buf, parser.WithContext(context)); err != nil {
         panic(err)
     }
-    metaData := meta.Get(context)
+    metaData := mmd.Get(context)
     title := metaData["Title"]
     fmt.Print(title)
 }
@@ -98,24 +106,24 @@ import (
     "github.com/yuin/goldmark/extension"
     "github.com/yuin/goldmark/parser"
     "github.com/yuin/goldmark/text"
-    "github.com/yuin/goldmark-meta"
+    "github.com/gearsix/mmd"
 )
 
 func main() {
 	markdown := goldmark.New(
 		goldmark.WithExtensions(
 			meta.New(
-				meta.WithStoresInDocument(),
+				mmd.WithStoresInDocument(),
 			),
 		),
 	)
-	source := `---
-Title: goldmark-meta
-Summary: Add YAML metadata to the document
-Tags:
-    - markdown
-    - goldmark
----
+	source := `<!--#
+Title = "Markdown Meta"
+Summary = "Add YAML metadata to the document"
+Tags = [ "markdown", "goldmark" ]
+-->
+
+This is an example of markdown meta using TOML.
 `
 
 	document := markdown.Parser().Parse(text.NewReader([]byte(source)))
@@ -125,65 +133,12 @@ Tags:
 }
 ```
 
-### Render the metadata as a table
-
-You need to add `extension.TableHTMLRenderer` or the `Table` extension to
-render metadata as a table.
-
-```go
-import (
-    "bytes"
-    "fmt"
-    "github.com/yuin/goldmark"
-    "github.com/yuin/goldmark/extension"
-    "github.com/yuin/goldmark/parser"
-    "github.com/yuin/goldmark/renderer"
-    "github.com/yuin/goldmark/util"
-    "github.com/yuin/goldmark-meta"
-)
-
-func main() {
-    markdown := goldmark.New(
-        goldmark.WithExtensions(
-            meta.New(meta.WithTable()),
-        ),
-        goldmark.WithRendererOptions(
-            renderer.WithNodeRenderers(
-                util.Prioritized(extension.NewTableHTMLRenderer(), 500),
-            ),
-        ),
-    )
-    // OR
-    // markdown := goldmark.New(
-    //     goldmark.WithExtensions(
-    //         meta.New(meta.WithTable()),
-    //         extension.Table,
-    //     ),
-    // )
-    source := `---
-Title: goldmark-meta
-Summary: Add YAML metadata to the document
-Tags:
-    - markdown
-    - goldmark
----
-
-# Hello goldmark-meta
-`
-
-    var buf bytes.Buffer
-    if err := markdown.Convert([]byte(source), &buf); err != nil {
-        panic(err)
-    }
-    fmt.Print(buf.String())
-}
-```
-
-
 License
---------------------
+-------
 MIT
 
-Author
---------------------
-Yusuke Inuzuka
+Authors
+-------
+
+- Yusuke Inuzuka
+- gearsix
