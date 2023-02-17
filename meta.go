@@ -17,8 +17,10 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+type metadata map[string]interface{}
+
 type data struct {
-	Map   map[string]interface{}
+	Map   metadata
 	Items yaml.MapSlice
 	Error error
 	Node  gast.Node
@@ -32,7 +34,7 @@ type Option interface {
 }
 
 // Get returns a metadata.
-func Get(pc parser.Context) map[string]interface{} {
+func Get(pc parser.Context) metadata {
 	v := pc.Get(contextKey)
 	if v == nil {
 		return nil
@@ -43,7 +45,7 @@ func Get(pc parser.Context) map[string]interface{} {
 
 // TryGet tries to get a metadata.
 // If there are parsing errors, then nil and error are returned
-func TryGet(pc parser.Context) (map[string]interface{}, error) {
+func TryGet(pc parser.Context) (metadata, error) {
 	dtmp := pc.Get(contextKey)
 	if dtmp == nil {
 		return nil, nil
@@ -95,7 +97,7 @@ func isOpen(line []byte) bool {
 func isClose(line []byte, signal byte) bool {
 	line = util.TrimRightSpace(util.TrimLeftSpace(line))
 	for i := 0; i < len(line); i++ {
-		if len(line[:i]) > len(closeToken)+1 && line[i] == signal {
+		if len(line[i:]) >= len(closeToken)+1 && line[i] == signal {
 			i++
 			if string(line[i:i+len(closeToken)]) == closeToken {
 				return true
@@ -134,7 +136,6 @@ func (b *metaParser) Continue(node gast.Node, reader text.Reader, pc parser.Cont
 	return parser.Continue | parser.NoChildren
 }
 
-// TODO: bookmark
 func (b *metaParser) Close(node gast.Node, reader text.Reader, pc parser.Context) {
 	lines := node.Lines()
 	var buf bytes.Buffer
@@ -144,7 +145,7 @@ func (b *metaParser) Close(node gast.Node, reader text.Reader, pc parser.Context
 	}
 	d := &data{}
 	d.Node = node
-	meta := map[string]interface{}{}
+	meta := metadata{}
 	if err := yaml.Unmarshal(buf.Bytes(), &meta); err != nil {
 		d.Error = err
 	} else {

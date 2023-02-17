@@ -5,12 +5,44 @@ import (
 	"testing"
 
 	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/text"
-	"github.com/yuin/goldmark/util"
 )
+
+var testMetaFormats = []string{"yaml", "json", "toml"}
+var validSource = map[string]string{
+	"yaml": `<!--:
+Title: mmd
+Summary: Add YAML metadata to the document
+Tags:
+- markdown
+- goldmark
+:-->
+
+This is markdown with YAML metadata
+`,
+	"json": `<!--{ "Title": "mmd", "Summary": "Add JSON metadata to the document", "Tags": [ "markdown", "goldmark" ] }-->`,
+	"toml": `<!--# Title = "mmd"
+		Summary = "Add TOML metadata to the document
+		Tags = [ "markdown", "goldmark" ] #-->`,
+}
+var invalidSource = map[string]string{
+	"yaml": `<!--:
+Title: mmd
+Summary: Add YAML metadata to the document
+Tags:
+- : {
+}
+  - markdown
+  - goldmark
+:-->
+
+This is markdown with YAML metadata
+`,
+	"json": `<!--{ "Title:" "mmd", "Summary": "Add JSON metadata to the document", "Tags": [ "markdown", "goldmark" ] }-->`,
+	"toml": `<!--# Title = "mmd"
+		Summary = "Add TOML metadata to the document
+		Tags == [ markdown", "goldmark ] #-->`,
+}
 
 func TestMeta(t *testing.T) {
 	markdown := goldmark.New(
@@ -18,231 +50,80 @@ func TestMeta(t *testing.T) {
 			Meta,
 		),
 	)
-	source := `---
-Title: goldmark-meta
-Summary: Add YAML metadata to the document
-Tags:
-    - markdown
-    - goldmark
----
-
-# Hello goldmark-meta
-`
 
 	var buf bytes.Buffer
 	context := parser.NewContext()
-	if err := markdown.Convert([]byte(source), &buf, parser.WithContext(context)); err != nil {
-		panic(err)
-	}
-	metaData := Get(context)
-	title := metaData["Title"]
-	s, ok := title.(string)
-	if !ok {
-		t.Error("Title not found in meta data or is not a string")
-	}
-	if s != "goldmark-meta" {
-		t.Errorf("Title must be %s, but got %v", "goldmark-meta", s)
-	}
-	if buf.String() != "<h1>Hello goldmark-meta</h1>\n" {
-		t.Errorf("should render '<h1>Hello goldmark-meta</h1>', but '%s'", buf.String())
-	}
-	tags, ok := metaData["Tags"].([]interface{})
-	if !ok {
-		t.Error("Tags not found in meta data or is not a slice")
-	}
-	if len(tags) != 2 {
-		t.Error("Tags must be a slice that has 2 elements")
-	}
-	if tags[0] != "markdown" {
-		t.Errorf("Tag#1 must be 'markdown', but got %s", tags[0])
-	}
-	if tags[1] != "goldmark" {
-		t.Errorf("Tag#2 must be 'goldmark', but got %s", tags[1])
-	}
-}
 
-func TestMetaTable(t *testing.T) {
-	markdown := goldmark.New(
-		goldmark.WithExtensions(
-			New(WithTable()),
-		),
-		goldmark.WithRendererOptions(
-			renderer.WithNodeRenderers(
-				util.Prioritized(extension.NewTableHTMLRenderer(), 500),
-			),
-		),
-	)
-	source := `---
-Title: goldmark-meta
-Summary: Add YAML metadata to the document
-Tags:
-    - markdown
-    - goldmark
----
+	for _, format := range testMetaFormats {
+		if err := markdown.Convert([]byte(validSource[format]), &buf, parser.WithContext(context)); err != nil {
+			t.Fatal(err)
+		}
 
-# Hello goldmark-meta
-`
+		metaData := Get(context)
 
-	var buf bytes.Buffer
-	if err := markdown.Convert([]byte(source), &buf); err != nil {
-		panic(err)
-	}
-	if buf.String() != `<table>
-<thead>
-<tr>
-<th>Title</th>
-<th>Summary</th>
-<th>Tags</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>goldmark-meta</td>
-<td>Add YAML metadata to the document</td>
-<td>[markdown goldmark]</td>
-</tr>
-</tbody>
-</table>
-<h1>Hello goldmark-meta</h1>
-` {
-		t.Error("invalid table output")
+		title := metaData["Title"]
+		if s, ok := title.(string); !ok {
+			t.Errorf("%s: Title not found in meta data or is not a string", format)
+		} else if s != "goldmark-meta" {
+			t.Errorf("%s: Title must be %s, but got %v", "goldmark-meta", format, s)
+		}
+
+		if buf.String() != "<p>Hello goldmark-meta</p>\n" {
+			t.Errorf("%s: should render '<p>Hello goldmark-meta</p>', but '%s'", format, buf.String())
+		}
+
+		if tags, ok := metaData["Tags"].([]interface{}); !ok {
+			t.Errorf("%s: Tags not found in meta data or is not a slice", format)
+		} else if len(tags) != 2 {
+			t.Errorf("%s: Tags must be a slice that has 2 elements", format)
+		} else if tags[0] != "markdown" {
+			t.Errorf("%s: Tag#1 must be 'markdown', but got %s", format, tags[0])
+		} else if tags[1] != "goldmark" {
+			t.Errorf("%s: Tag#2 must be 'goldmark', but got %s", format, tags[1])
+		}
 	}
 }
 
 func TestMetaError(t *testing.T) {
 	markdown := goldmark.New(
 		goldmark.WithExtensions(
-			New(WithTable()),
+			New(),
 		),
 	)
-	source := `---
-Title: goldmark-meta
-Summary: Add YAML metadata to the document
-Tags:
-  - : {
-  }
-    - markdown
-    - goldmark
----
-
-# Hello goldmark-meta
-`
 
 	var buf bytes.Buffer
 	context := parser.NewContext()
-	if err := markdown.Convert([]byte(source), &buf, parser.WithContext(context)); err != nil {
-		panic(err)
+
+	if err := markdown.Convert([]byte(invalidSource["json"]), &buf, parser.WithContext(context)); err != nil {
+		t.Fatal(err)
 	}
-	if buf.String() != `Title: goldmark-meta
-Summary: Add YAML metadata to the document
-Tags:
-  - : {
-  }
-    - markdown
-    - goldmark
-<!-- yaml: line 3: did not find expected key -->
-<h1>Hello goldmark-meta</h1>
+	if buf.String() != `<!-- json: line 1: TODO -->
+<p>This is a markdown with JSON metadata</p>
 ` {
-		t.Error("invalid error output")
+		t.Error("json: invalid error output")
 	}
 
-	v, err := TryGet(context)
-	if err == nil {
+	if err := markdown.Convert([]byte(invalidSource["yaml"]), &buf, parser.WithContext(context)); err != nil {
+		t.Fatal(err)
+	}
+	if buf.String() != `<!-- yaml: line 3: did not find expected key -->
+<p>This is markdown with YAML metadata</p>
+` {
+		t.Error("yaml: invalid error output")
+	}
+
+	if err := markdown.Convert([]byte(invalidSource["toml"]), &buf, parser.WithContext(context)); err != nil {
+		t.Fatal(err)
+	}
+	if buf.String() != `<!-- toml: line 3: did not find expected key -->
+<p>This is markdown with TOML metadata</p>
+` {
+		t.Error("toml: invalid error output")
+	}
+
+	if v, err := TryGet(context); err == nil {
 		t.Error("error should not be nil")
-	}
-	if v != nil {
+	} else if v != nil {
 		t.Error("data should be nil when there are errors")
-	}
-}
-
-func TestMetaTableWithBlankline(t *testing.T) {
-	markdown := goldmark.New(
-		goldmark.WithExtensions(
-			New(WithTable()),
-		),
-		goldmark.WithRendererOptions(
-			renderer.WithNodeRenderers(
-				util.Prioritized(extension.NewTableHTMLRenderer(), 500),
-			),
-		),
-	)
-	source := `---
-Title: goldmark-meta
-Summary: Add YAML metadata to the document
-
-# comments
-Tags:
-    - markdown
-    - goldmark
----
-
-# Hello goldmark-meta
-`
-
-	var buf bytes.Buffer
-	if err := markdown.Convert([]byte(source), &buf); err != nil {
-		panic(err)
-	}
-	if buf.String() != `<table>
-<thead>
-<tr>
-<th>Title</th>
-<th>Summary</th>
-<th>Tags</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>goldmark-meta</td>
-<td>Add YAML metadata to the document</td>
-<td>[markdown goldmark]</td>
-</tr>
-</tbody>
-</table>
-<h1>Hello goldmark-meta</h1>
-` {
-		t.Error("invalid table output")
-	}
-}
-
-func TestMetaStoreInDocument(t *testing.T) {
-	markdown := goldmark.New(
-		goldmark.WithExtensions(
-			New(
-				WithStoresInDocument(),
-			),
-		),
-	)
-	source := `---
-Title: goldmark-meta
-Summary: Add YAML metadata to the document
-Tags:
-    - markdown
-    - goldmark
----
-`
-
-	document := markdown.Parser().Parse(text.NewReader([]byte(source)))
-	metaData := document.OwnerDocument().Meta()
-	title := metaData["Title"]
-	s, ok := title.(string)
-	if !ok {
-		t.Error("Title not found in meta data or is not a string")
-	}
-	if s != "goldmark-meta" {
-		t.Errorf("Title must be %s, but got %v", "goldmark-meta", s)
-	}
-	tags, ok := metaData["Tags"].([]interface{})
-	if !ok {
-		t.Error("Tags not found in meta data or is not a slice")
-	}
-	if len(tags) != 2 {
-		t.Error("Tags must be a slice that has 2 elements")
-	}
-	if tags[0] != "markdown" {
-		t.Errorf("Tag#1 must be 'markdown', but got %s", tags[0])
-	}
-	if tags[1] != "goldmark" {
-		t.Errorf("Tag#2 must be 'goldmark', but got %s", tags[1])
 	}
 }
