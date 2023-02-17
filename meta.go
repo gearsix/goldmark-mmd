@@ -10,7 +10,6 @@ import (
 
 	"github.com/yuin/goldmark"
 	gast "github.com/yuin/goldmark/ast"
-	east "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
@@ -32,7 +31,7 @@ type Option interface {
 	metaOption()
 }
 
-// Get returns a YAML metadata.
+// Get returns a metadata.
 func Get(pc parser.Context) map[string]interface{} {
 	v := pc.Get(contextKey)
 	if v == nil {
@@ -42,8 +41,8 @@ func Get(pc parser.Context) map[string]interface{} {
 	return d.Map
 }
 
-// TryGet tries to get a YAML metadata.
-// If there are YAML parsing errors, then nil and error are returned
+// TryGet tries to get a metadata.
+// If there are parsing errors, then nil and error are returned
 func TryGet(pc parser.Context) (map[string]interface{}, error) {
 	dtmp := pc.Get(contextKey)
 	if dtmp == nil {
@@ -56,54 +55,58 @@ func TryGet(pc parser.Context) (map[string]interface{}, error) {
 	return d.Map, nil
 }
 
-// GetItems returns a YAML metadata.
-// GetItems preserves defined key order.
-func GetItems(pc parser.Context) yaml.MapSlice {
-	v := pc.Get(contextKey)
-	if v == nil {
-		return nil
-	}
-	d := v.(*data)
-	return d.Items
-}
-
-// TryGetItems returns a YAML metadata.
-// TryGetItems preserves defined key order.
-// If there are YAML parsing errors, then nil and erro are returned.
-func TryGetItems(pc parser.Context) (yaml.MapSlice, error) {
-	dtmp := pc.Get(contextKey)
-	if dtmp == nil {
-		return nil, nil
-	}
-	d := dtmp.(*data)
-	if d.Error != nil {
-		return nil, d.Error
-	}
-	return d.Items, nil
-}
+const openToken = "<!--"
+const closeToken = "-->"
+const formatYaml = ':'
+const formatToml = '#'
+const formatJson = '{'
 
 type metaParser struct {
+	format byte
 }
 
 var defaultParser = &metaParser{}
 
-// NewParser returns a BlockParser that can parse YAML metadata blocks.
+// NewParser returns a BlockParser that can parse metadata blocks.
 func NewParser() parser.BlockParser {
 	return defaultParser
 }
 
-func isSeparator(line []byte) bool {
+func isOpen(line []byte) bool {
 	line = util.TrimRightSpace(util.TrimLeftSpace(line))
 	for i := 0; i < len(line); i++ {
-		if line[i] != '-' {
-			return false
+		if len(line[i:]) >= len(openToken)+1 && line[i] == openToken[0] {
+			signal := line[i+len(openToken)]
+			switch signal {
+			case formatYaml:
+				fallthrough
+			case formatToml:
+				fallthrough
+			case formatJson:
+				return true
+			default:
+				break
+			}
 		}
 	}
-	return true
+	return false
+}
+
+func isClose(line []byte, signal byte) bool {
+	line = util.TrimRightSpace(util.TrimLeftSpace(line))
+	for i := 0; i < len(line); i++ {
+		if len(line[:i]) > len(closeToken)+1 && line[i] == signal {
+			i++
+			if string(line[i:i+len(closeToken)]) == closeToken {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (b *metaParser) Trigger() []byte {
-	return []byte{'-'}
+	return []byte{openToken[0]}
 }
 
 func (b *metaParser) Open(parent gast.Node, reader text.Reader, pc parser.Context) (gast.Node, parser.State) {
@@ -112,7 +115,10 @@ func (b *metaParser) Open(parent gast.Node, reader text.Reader, pc parser.Contex
 		return nil, parser.NoChildren
 	}
 	line, _ := reader.PeekLine()
-	if isSeparator(line) {
+	if isOpen(line) {
+		reader.Advance(len(openToken))
+		b.format = reader.Peek()
+		reader.Advance(1)
 		return gast.NewTextBlock(), parser.NoChildren
 	}
 	return nil, parser.NoChildren
@@ -120,7 +126,7 @@ func (b *metaParser) Open(parent gast.Node, reader text.Reader, pc parser.Contex
 
 func (b *metaParser) Continue(node gast.Node, reader text.Reader, pc parser.Context) parser.State {
 	line, segment := reader.PeekLine()
-	if isSeparator(line) && !util.IsBlank(line) {
+	if isClose(line, b.format) && !util.IsBlank(line) {
 		reader.Advance(segment.Len())
 		return parser.Close
 	}
@@ -128,6 +134,7 @@ func (b *metaParser) Continue(node gast.Node, reader text.Reader, pc parser.Cont
 	return parser.Continue | parser.NoChildren
 }
 
+// TODO: bookmark
 func (b *metaParser) Close(node gast.Node, reader text.Reader, pc parser.Context) {
 	lines := node.Lines()
 	var buf bytes.Buffer
@@ -163,7 +170,7 @@ func (b *metaParser) CanInterruptParagraph() bool {
 }
 
 func (b *metaParser) CanAcceptIndentedLine() bool {
-	return false
+	return true
 }
 
 type astTransformer struct {
@@ -171,9 +178,6 @@ type astTransformer struct {
 }
 
 type transformerConfig struct {
-	// Renders metadata as an html table.
-	Table bool
-
 	// Stores metadata in ast.Document.Meta().
 	StoresInDocument bool
 }
@@ -183,25 +187,6 @@ type transformerOption interface {
 
 	// SetMetaOption sets options for the metadata parser.
 	SetMetaOption(*transformerConfig)
-}
-
-var _ transformerOption = &withTable{}
-
-type withTable struct {
-	value bool
-}
-
-func (o *withTable) metaOption() {}
-
-func (o *withTable) SetMetaOption(m *transformerConfig) {
-	m.Table = o.value
-}
-
-// WithTable is a functional option that renders a YAML metadata as a table.
-func WithTable() Option {
-	return &withTable{
-		value: true,
-	}
 }
 
 var _ transformerOption = &withStoresInDocument{}
@@ -216,7 +201,7 @@ func (o *withStoresInDocument) SetMetaOption(c *transformerConfig) {
 	c.StoresInDocument = o.value
 }
 
-// WithStoresInDocument is a functional option that parser will store YAML meta in ast.Document.Meta().
+// WithStoresInDocument is a functional option that parser will store meta in ast.Document.Meta().
 func WithStoresInDocument() Option {
 	return &withStoresInDocument{
 		value: true,
@@ -226,7 +211,6 @@ func WithStoresInDocument() Option {
 func newTransformer(opts ...transformerOption) parser.ASTTransformer {
 	p := &astTransformer{
 		transformerConfig: transformerConfig{
-			Table:            false,
 			StoresInDocument: false,
 		},
 	}
@@ -247,34 +231,6 @@ func (a *astTransformer) Transform(node *gast.Document, reader text.Reader, pc p
 		msg.SetCode(true)
 		d.Node.AppendChild(d.Node, msg)
 		return
-	}
-
-	if a.Table {
-		meta := GetItems(pc)
-		if meta == nil {
-			return
-		}
-		table := east.NewTable()
-		alignments := []east.Alignment{}
-		for range meta {
-			alignments = append(alignments, east.AlignNone)
-		}
-		row := east.NewTableRow(alignments)
-		for _, item := range meta {
-			cell := east.NewTableCell()
-			cell.AppendChild(cell, gast.NewString([]byte(fmt.Sprintf("%v", item.Key))))
-			row.AppendChild(row, cell)
-		}
-		table.AppendChild(table, east.NewTableHeader(row))
-
-		row = east.NewTableRow(alignments)
-		for _, item := range meta {
-			cell := east.NewTableCell()
-			cell.AppendChild(cell, gast.NewString([]byte(fmt.Sprintf("%v", item.Value))))
-			row.AppendChild(row, cell)
-		}
-		table.AppendChild(table, row)
-		node.InsertBefore(node, node.FirstChild(), table)
 	}
 
 	if a.StoresInDocument {
