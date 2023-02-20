@@ -13,15 +13,13 @@ import (
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
-
-	"gopkg.in/yaml.v2"
+	"notabug.org/gearsix/dati"
 )
 
 type metadata map[string]interface{}
 
 type data struct {
 	Map   metadata
-	Items yaml.MapSlice
 	Error error
 	Node  gast.Node
 }
@@ -61,7 +59,8 @@ const openToken = "<!--"
 const closeToken = "-->"
 const formatYaml = ':'
 const formatToml = '#'
-const formatJson = '{'
+const formatJsonOpen = '{'
+const formatJsonClose = '}'
 
 type metaParser struct {
 	format byte
@@ -84,7 +83,7 @@ func isOpen(line []byte) bool {
 				fallthrough
 			case formatToml:
 				fallthrough
-			case formatJson:
+			case formatJsonOpen:
 				return true
 			default:
 				break
@@ -94,17 +93,24 @@ func isOpen(line []byte) bool {
 	return false
 }
 
-func isClose(line []byte, signal byte) bool {
-	line = util.TrimRightSpace(util.TrimLeftSpace(line))
+// isClose will check `line` for the closing token.
+// If found, the integer returned will be the *nth* byte of `line` that the close token starts at.
+// If not found, then -1 is returned.
+func isClose(line []byte, signal byte) int {
+	//line = util.TrimRightSpace(util.TrimLeftSpace(line))
 	for i := 0; i < len(line); i++ {
-		if len(line[i:]) >= len(closeToken)+1 && line[i] == signal {
+		if line[i] == signal && len(line[i:]) >= len(closeToken)+1 {
 			i++
 			if string(line[i:i+len(closeToken)]) == closeToken {
-				return true
+				if signal == formatJsonClose {
+					return i
+				} else {
+					return i - 1
+				}
 			}
 		}
 	}
-	return false
+	return -1
 }
 
 func (b *metaParser) Trigger() []byte {
@@ -117,23 +123,51 @@ func (b *metaParser) Open(parent gast.Node, reader text.Reader, pc parser.Contex
 		return nil, parser.NoChildren
 	}
 	line, _ := reader.PeekLine()
+
 	if isOpen(line) {
 		reader.Advance(len(openToken))
-		b.format = reader.Peek()
-		reader.Advance(1)
-		return gast.NewTextBlock(), parser.NoChildren
+		if b.format = reader.Peek(); b.format == formatJsonOpen {
+			b.format = formatJsonClose
+		} else {
+			reader.Advance(1)
+		}
+
+		node := gast.NewTextBlock()
+		if state := b.Continue(node, reader, pc); state == parser.Close {
+			parent.AppendChild(parent, node)
+			b.Close(node, reader, pc)
+		}
+		return node, parser.NoChildren
 	}
 	return nil, parser.NoChildren
 }
 
 func (b *metaParser) Continue(node gast.Node, reader text.Reader, pc parser.Context) parser.State {
 	line, segment := reader.PeekLine()
-	if isClose(line, b.format) && !util.IsBlank(line) {
-		reader.Advance(segment.Len())
+	if n := isClose(line, b.format); n != -1 && !util.IsBlank(line) {
+		segment.Stop -= len(line[n:])
+		node.Lines().Append(segment)
+		reader.Advance((n + 1) + len(closeToken))
 		return parser.Close
 	}
 	node.Lines().Append(segment)
 	return parser.Continue | parser.NoChildren
+}
+
+func (b *metaParser) loadMetadata(buf []byte) (meta metadata, err error) {
+	var format dati.DataFormat
+	switch b.format {
+	case formatYaml:
+		format = dati.YAML
+	case formatToml:
+		format = dati.TOML
+	case formatJsonClose:
+		format = dati.JSON
+	default:
+		return meta, dati.ErrUnsupportedData(string(b.format))
+	}
+	err = dati.LoadData(format, bytes.NewReader(buf), &meta)
+	return meta, err
 }
 
 func (b *metaParser) Close(node gast.Node, reader text.Reader, pc parser.Context) {
@@ -143,21 +177,8 @@ func (b *metaParser) Close(node gast.Node, reader text.Reader, pc parser.Context
 		segment := lines.At(i)
 		buf.Write(segment.Value(reader.Source()))
 	}
-	d := &data{}
-	d.Node = node
-	meta := metadata{}
-	if err := yaml.Unmarshal(buf.Bytes(), &meta); err != nil {
-		d.Error = err
-	} else {
-		d.Map = meta
-	}
-
-	metaMapSlice := yaml.MapSlice{}
-	if err := yaml.Unmarshal(buf.Bytes(), &metaMapSlice); err != nil {
-		d.Error = err
-	} else {
-		d.Items = metaMapSlice
-	}
+	d := &data{Node: node}
+	d.Map, d.Error = b.loadMetadata(buf.Bytes())
 
 	pc.Set(contextKey, d)
 
@@ -167,7 +188,7 @@ func (b *metaParser) Close(node gast.Node, reader text.Reader, pc parser.Context
 }
 
 func (b *metaParser) CanInterruptParagraph() bool {
-	return false
+	return true
 }
 
 func (b *metaParser) CanAcceptIndentedLine() bool {

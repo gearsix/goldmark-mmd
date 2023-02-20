@@ -14,16 +14,19 @@ var validSource = map[string]string{
 Title: mmd
 Summary: Add YAML metadata to the document
 Tags:
-- markdown
-- goldmark
+  - markdown
+  - goldmark
 :-->
 
-This is markdown with YAML metadata
+Markdown with metadata
 `,
-	"json": `<!--{ "Title": "mmd", "Summary": "Add JSON metadata to the document", "Tags": [ "markdown", "goldmark" ] }-->`,
+	"json": `<!--{ "Title": "mmd", "Summary": "Add JSON metadata to the document", "Tags": [ "markdown", "goldmark" ] }-->
+Markdown with metadata`,
 	"toml": `<!--# Title = "mmd"
-		Summary = "Add TOML metadata to the document
-		Tags = [ "markdown", "goldmark" ] #-->`,
+		Summary = "Add TOML metadata to the document"
+		Tags = [ "markdown", "goldmark" ] #-->
+Markdown with metadata
+`,
 }
 var invalidSource = map[string]string{
 	"yaml": `<!--:
@@ -36,12 +39,14 @@ Tags:
   - goldmark
 :-->
 
-This is markdown with YAML metadata
-`,
-	"json": `<!--{ "Title:" "mmd", "Summary": "Add JSON metadata to the document", "Tags": [ "markdown", "goldmark" ] }-->`,
+Markdown with metadata`,
+	"json": `<!--{ "Title:" "mmd", "Summary": "Add JSON metadata to the document", "Tags": [ "markdown", "goldmark" ] }-->
+Markdown with metadata`,
 	"toml": `<!--# Title = "mmd"
 		Summary = "Add TOML metadata to the document
-		Tags == [ markdown", "goldmark ] #-->`,
+		Tags == [ markdown", "goldmark ] #-->
+Markdown with metadata
+`,
 }
 
 func TestMeta(t *testing.T) {
@@ -64,12 +69,12 @@ func TestMeta(t *testing.T) {
 		title := metaData["Title"]
 		if s, ok := title.(string); !ok {
 			t.Errorf("%s: Title not found in meta data or is not a string", format)
-		} else if s != "goldmark-meta" {
-			t.Errorf("%s: Title must be %s, but got %v", "goldmark-meta", format, s)
+		} else if s != "mmd" {
+			t.Errorf("%s: Title must be 'mmd', but got %v", format, s)
 		}
 
-		if buf.String() != "<p>Hello goldmark-meta</p>\n" {
-			t.Errorf("%s: should render '<p>Hello goldmark-meta</p>', but '%s'", format, buf.String())
+		if buf.String() != "<p>Markdown with metadata</p>\n" {
+			t.Errorf("%s: should render '<p>Markdown with metadata</p>', but '%s'", format, buf.String())
 		}
 
 		if tags, ok := metaData["Tags"].([]interface{}); !ok {
@@ -116,7 +121,7 @@ func TestMetaError(t *testing.T) {
 		t.Fatal(err)
 	}
 	if buf.String() != `<!-- toml: line 3: did not find expected key -->
-<p>This is markdown with TOML metadata</p>
+<p>Markdown with metadata</p>
 ` {
 		t.Error("toml: invalid error output")
 	}
