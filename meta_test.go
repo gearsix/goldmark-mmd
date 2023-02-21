@@ -56,10 +56,10 @@ func TestMeta(t *testing.T) {
 		),
 	)
 
-	var buf bytes.Buffer
 	context := parser.NewContext()
 
 	for _, format := range testMetaFormats {
+		var buf bytes.Buffer
 		if err := markdown.Convert([]byte(validSource[format]), &buf, parser.WithContext(context)); err != nil {
 			t.Fatal(err)
 		}

@@ -118,8 +118,7 @@ func (b *metaParser) Trigger() []byte {
 }
 
 func (b *metaParser) Open(parent gast.Node, reader text.Reader, pc parser.Context) (gast.Node, parser.State) {
-	linenum, _ := reader.Position()
-	if linenum != 0 {
+	if linenum, _ := reader.Position(); linenum != 0 {
 		return nil, parser.NoChildren
 	}
 	line, _ := reader.PeekLine()
@@ -133,11 +132,11 @@ func (b *metaParser) Open(parent gast.Node, reader text.Reader, pc parser.Contex
 		}
 
 		node := gast.NewTextBlock()
-		if state := b.Continue(node, reader, pc); state == parser.Close {
-			parent.AppendChild(parent, node)
-			b.Close(node, reader, pc)
+		if b.Continue(node, reader, pc) != parser.Close {
+			return node, parser.NoChildren
 		}
-		return node, parser.NoChildren
+		parent.AppendChild(parent, node)
+		b.Close(node, reader, pc)
 	}
 	return nil, parser.NoChildren
 }
@@ -147,7 +146,7 @@ func (b *metaParser) Continue(node gast.Node, reader text.Reader, pc parser.Cont
 	if n := isClose(line, b.format); n != -1 && !util.IsBlank(line) {
 		segment.Stop -= len(line[n:])
 		node.Lines().Append(segment)
-		reader.Advance((n + 1) + len(closeToken))
+		reader.Advance(n + len(closeToken) + 1)
 		return parser.Close
 	}
 	node.Lines().Append(segment)
