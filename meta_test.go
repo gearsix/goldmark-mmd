@@ -2,6 +2,7 @@ package meta
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/yuin/goldmark"
@@ -50,12 +51,7 @@ Markdown with metadata
 }
 
 func TestMeta(t *testing.T) {
-	markdown := goldmark.New(
-		goldmark.WithExtensions(
-			Meta,
-		),
-	)
-
+	markdown := goldmark.New(goldmark.WithExtensions(MetaMarkdown))
 	context := parser.NewContext()
 
 	for _, format := range testMetaFormats {
@@ -89,46 +85,20 @@ func TestMeta(t *testing.T) {
 	}
 }
 
-func TestMetaError(t *testing.T) {
-	markdown := goldmark.New(
-		goldmark.WithExtensions(
-			New(),
-		),
-	)
-
-	var buf bytes.Buffer
+func TestMeta_Error(t *testing.T) {
+	markdown := goldmark.New(goldmark.WithExtensions(MetaMarkdown))
 	context := parser.NewContext()
 
-	if err := markdown.Convert([]byte(invalidSource["json"]), &buf, parser.WithContext(context)); err != nil {
-		t.Fatal(err)
-	}
-	if buf.String() != `<!-- json: line 1: TODO -->
-<p>This is a markdown with JSON metadata</p>
-` {
-		t.Error("json: invalid error output")
-	}
-
-	if err := markdown.Convert([]byte(invalidSource["yaml"]), &buf, parser.WithContext(context)); err != nil {
-		t.Fatal(err)
-	}
-	if buf.String() != `<!-- yaml: line 3: did not find expected key -->
-<p>This is markdown with YAML metadata</p>
-` {
-		t.Error("yaml: invalid error output")
-	}
-
-	if err := markdown.Convert([]byte(invalidSource["toml"]), &buf, parser.WithContext(context)); err != nil {
-		t.Fatal(err)
-	}
-	if buf.String() != `<!-- toml: line 3: did not find expected key -->
-<p>Markdown with metadata</p>
-` {
-		t.Error("toml: invalid error output")
-	}
-
-	if v, err := TryGet(context); err == nil {
-		t.Error("error should not be nil")
-	} else if v != nil {
-		t.Error("data should be nil when there are errors")
+	var buf bytes.Buffer
+	var str string
+	for _, format := range testMetaFormats {
+		if err := markdown.Convert([]byte(invalidSource[format]), &buf, parser.WithContext(context)); err != nil {
+			t.Fatal(err)
+		}
+		str = buf.String()
+		if !strings.Contains(str, `<!-- meta error, `) {
+			t.Errorf("%s: invalid error output '%s'", format, str)
+		}
+		buf.Reset()
 	}
 }

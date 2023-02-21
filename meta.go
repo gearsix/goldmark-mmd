@@ -26,11 +26,6 @@ type data struct {
 
 var contextKey = parser.NewContextKey()
 
-// Option interface sets options for this extension.
-type Option interface {
-	metaOption()
-}
-
 // Get returns a metadata.
 func Get(pc parser.Context) metadata {
 	v := pc.Get(contextKey)
@@ -216,12 +211,6 @@ type withStoresInDocument struct {
 	value bool
 }
 
-func (o *withStoresInDocument) metaOption() {}
-
-func (o *withStoresInDocument) SetMetaOption(c *transformerConfig) {
-	c.StoresInDocument = o.value
-}
-
 // WithStoresInDocument is a functional option that parser will store meta in ast.Document.Meta().
 func WithStoresInDocument() Option {
 	return &withStoresInDocument{
@@ -248,7 +237,7 @@ func (a *astTransformer) Transform(node *gast.Document, reader text.Reader, pc p
 	}
 	d := dtmp.(*data)
 	if d.Error != nil {
-		msg := gast.NewString([]byte(fmt.Sprintf("<!-- %s -->", d.Error)))
+		msg := gast.NewString([]byte(fmt.Sprintf("<!-- meta error, %s -->", d.Error)))
 		msg.SetCode(true)
 		d.Node.AppendChild(d.Node, msg)
 		return
@@ -259,6 +248,17 @@ func (a *astTransformer) Transform(node *gast.Document, reader text.Reader, pc p
 			node.AddMeta(k, v)
 		}
 	}
+}
+
+// Option interface sets options for this extension.
+type Option interface {
+	metaOption()
+}
+
+func (o *withStoresInDocument) metaOption() {}
+
+func (o *withStoresInDocument) SetMetaOption(c *transformerConfig) {
+	c.StoresInDocument = o.value
 }
 
 type meta struct {
