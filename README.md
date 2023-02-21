@@ -19,29 +19,27 @@ This is the idiomatic way of parsing metadata for in a markdown document, since 
 [Hugo](gohugo.io) (a tool similair to jekyll) later decided it would allow for multiple data formats, which required different document markers for those languages.
 For JSON the marker was simply the opening `{` and for TOML it was `+++`.
 
-The are great solutions but all of them also render in any markdown parser (e.g. GitHub) that doesn't expect markdown, causing an awkward section at the top of the render...
-
-> ![rendered-meta](rendered-meta.png)
+The are great solutions but all of them also render in any markdown parser (e.g. GitHub) that doesn't expect metadata, causing an awkward section at the top of the render (see the top of this document).
 
 To deal with this, the original *goldmark-meta* extension added a bunch of code that gave the option to render metdata as a HTML table but my argument is that metadata shouldn't be rendered at all.
 
-This extension uses a different syntax to avoid that issue by putting the metadata in a HTML comment, that way it doesn't get rendered regardless of the markdown parser - which is how metadata should be treated.
+This extension uses a different syntax to avoid the issue by putting the metadata in a HTML comment, that way it doesn't get rendered regardless of the markdown parser - which is how metadata should be treated.
 
 
 Syntax
 ------
 
-Metadata must start of the start of the document using an **opening HTML comment tag** (`<!--`), followed by a **signal character** that signals the metadata format being used.
+Metadata must start of the buffer using an **opening HTML comment tag** (`<!--`), followed by a **signal character** (signalling the metadata format being used).
 
 Metadata must end with the same **signal character** followed by  **closing HTML comment tag** (`-->`).
 
-Everything inbetween these two tags should be the metadata in the signalled syntax. For examples, see below.
+Everything inbetween these two tags should be the metadata in the signalled syntax.
 
-Here are the **signal characters** and examples of how the metablock at the start of the document should look (where `...` is the metadata text):
+### Signal Characters
 
-- YAML = `:`&emsp;(`<!--: ... :-->`)
-- TOML = `#`&emsp;(`<!--# ... #-->`)
-- JSON = `{}`&emsp;(`<!--{ ... }-->`)
+- YAML = `:`&emsp;(`<!--:...:-->`)
+- TOML = `#`&emsp;(`<!--#...#-->`)
+- JSON = `{}`&emsp;(`<!--{...}-->`)
 
 
 Usage
@@ -60,39 +58,34 @@ go get github.com/gearsix/mmd
 
 ```go
 import (
-    "bytes"
-    "fmt"
-    "github.com/yuin/goldmark"
-    "github.com/yuin/goldmark/extension"
-    "github.com/yuin/goldmark/parser"
-    "github.com/gearsix/mmd"
+	"bytes"
+	"fmt"
+
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/parser"
+	"github.com/gearsix/mmd"
 )
 
 func main() {
-    markdown := goldmark.New(
-        goldmark.WithExtensions(
-            mmd.Meta,
-        ),
-    )
-    source := `<!--:
+	markdown := goldmark.New(goldmark.WithExtensions(mmd.MarkdownMeta))
+	source := `<!--:
 Title: Markdown Meta
-Summary: Add YAML metadata to the document
 Tags:
-    - markdown
-    - goldmark
--->
+	- markdown
+	- goldmark
+:-->
 
 This is an example of markdown meta using YAML.
 `
 
-    var buf bytes.Buffer
-    context := parser.NewContext()
-    if err := markdown.Convert([]byte(source), &buf, parser.WithContext(context)); err != nil {
-        panic(err)
-    }
-    metaData := mmd.Get(context)
-    title := metaData["Title"]
-    fmt.Print(title)
+	var buf bytes.Buffer
+	context := parser.NewContext()
+	if err := markdown.Convert([]byte(source), &buf, parser.WithContext(context)); err != nil {
+		panic(err)
+	}
+	metaData := mmd.Get(context)
+	title := metaData["Title"]
+	fmt.Print(title)
 }
 ```
 
@@ -100,34 +93,25 @@ Or `WithStoresInDocument` option:
 
 ```go
 import (
-    "bytes"
-    "fmt"
-    "github.com/yuin/goldmark"
-    "github.com/yuin/goldmark/extension"
-    "github.com/yuin/goldmark/parser"
-    "github.com/yuin/goldmark/text"
-    "github.com/gearsix/mmd"
+	"bytes"
+	"fmt"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/text"
+	"github.com/gearsix/mmd"
 )
 
 func main() {
-	markdown := goldmark.New(
-		goldmark.WithExtensions(
-			meta.New(
-				mmd.WithStoresInDocument(),
-			),
-		),
-	)
-	source := `<!--#
-Title = "Markdown Meta"
-Summary = "Add YAML metadata to the document"
-Tags = [ "markdown", "goldmark" ]
--->
-
-This is an example of markdown meta using TOML.
+	markdown := goldmark.New(goldmark.WithExtensions(
+		meta.New(mmd.WithStoresInDocument()),
+	))
+	source := `<!--{ "Title": "Markdown Meta", "Tags": [ "markdown", "goldmark" ] }-->
+This is an example of markdown meta using JSON.
 `
 
 	document := markdown.Parser().Parse(text.NewReader([]byte(source)))
-	metaData := document.OwnerDocument().Meta()
+	metaData := document.OwnerDocument().MarkdownMeta()
 	title := metaData["Title"]
 	fmt.Print(title)
 }
